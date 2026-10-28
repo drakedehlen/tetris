@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tetris Beach Party</title>
+  <style>
+    :root { --glass: rgba(10,22,44,.55); }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, system-ui, sans-serif;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background-image:
+        linear-gradient(to bottom right, rgba(8,18,45,.45), rgba(4,22,35,.55)),
+        url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=2000&q=80'),
+        url('https://images.unsplash.com/photo-1473116763249-2faaef81ccda?auto=format&fit=crop&w=2000&q=80');
+      background-size: cover, cover, cover;
+      background-position: center;
+      background-attachment: fixed;
+      overflow: auto;
+    }
+    .app {
+      width: min(1180px, 100%);
+      margin-inline: auto;
+      display: grid;
+      grid-template-columns: minmax(320px, 640px) minmax(320px, 1fr);
+      gap: 20px;
+      align-items: center;
+    }
+    .panel {
+      background: var(--glass);
+      border: 1px solid rgba(255,255,255,.24);
+      border-radius: 18px;
+      backdrop-filter: blur(8px);
+      padding: 16px;
+      box-shadow: 0 18px 40px rgba(0,0,0,.32);
+    }
+    h1 { margin: 0 0 10px; font-size: clamp(1.4rem, 3.5vw, 2rem); }
+    .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+    button { border: 0; border-radius: 999px; padding: 10px 16px; color:#fff; font-weight: 700; cursor:pointer; }
+    #startBtn{background:#16a34a;} #pauseBtn{background:#f59e0b;} #stopBtn{background:#ef4444;}
+    .hud { display:flex; gap:10px; flex-wrap:wrap; margin:8px 0 12px; font-weight:600; }
+    .game-wrap { display:grid; grid-template-columns: 1fr 150px; gap: 12px; align-items: start; }
+    canvas { width:100%; border:2px solid rgba(255,255,255,.36); border-radius:12px; background:rgba(8,14,32,.9); display:block; }
+    #next { width: 150px; height: 150px; }
+    .music-list { display: grid; gap: 10px; }
+    .track-option { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,.09); border:1px solid rgba(255,255,255,.18); border-radius: 10px; padding: 8px; }
+    iframe { width: 100%; height: 180px; border: 0; border-radius: 10px; }
+    .active-track { outline: 2px solid #22d3ee; }
+    @media (max-width: 980px){
+      .app { grid-template-columns: 1fr; max-width: 700px; }
+      .game-wrap { grid-template-columns: 1fr; }
+      #next { max-width:150px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="panel">
+      <h1>🎮 Tetris Beach Party</h1>
+      <div class="controls">
+        <button id="startBtn">Démarrer</button>
+        <button id="pauseBtn">Pause</button>
+        <button id="stopBtn">Arrêter</button>
+      </div>
+      <div class="hud">
+        <div>Score: <span id="score">0</span></div>
+        <div>Lignes: <span id="lines">0</span></div>
+        <div>Statut: <span id="status">Prêt</span></div>
+      </div>
+      <div class="game-wrap">
+        <canvas id="tetris" width="300" height="600"></canvas>
+        <div>
+          <p><strong>Pièce suivante</strong></p>
+          <canvas id="next" width="150" height="150"></canvas>
+          <p>Clavier: ← → ↓ pour bouger, ↑ pour tourner.</p>
+        </div>
+      </div>
+    </section>
+
+    <aside class="panel">
+      <p>🎵 Choisis une playlist, puis utilise Démarrer / Pause / Arrêter.</p>
+      <div class="music-list">
+        <label class="track-option active-track" id="track1Wrap"><input type="radio" name="track" value="0" checked> Techno DJ Set</label>
+        <iframe id="scPlayer1" allow="autoplay" src="https://w.soundcloud.com/player/?url=https%3A//soundcloud.com/drake-dehlen/sets/drake-dehlen-techno-dj-set&color=%23ff6b6b&auto_play=false&show_comments=false&visual=true"></iframe>
+
+        <label class="track-option" id="track2Wrap"><input type="radio" name="track" value="1"> Releases</label>
+        <iframe id="scPlayer2" allow="autoplay" src="https://w.soundcloud.com/player/?url=https%3A//soundcloud.com/drake-dehlen/sets/relesases&color=%2368d391&auto_play=false&show_comments=false&visual=true"></iframe>
+
+        <label class="track-option" id="track3Wrap"><input type="radio" name="track" value="2"> Tech House DJ Set</label>
+        <iframe id="scPlayer3" allow="autoplay" src="https://w.soundcloud.com/player/?url=https%3A//soundcloud.com/drake-dehlen/sets/drake-dehlen-tech-house-dj-set&color=%238b5cf6&auto_play=false&show_comments=false&visual=true"></iframe>
+      </div>
+    </aside>
+  </main>
+
+<script src="https://w.soundcloud.com/player/api.js"></script>
+<script>
+const canvas = document.getElementById('tetris');
+const ctx = canvas.getContext('2d');
+ctx.scale(30, 30);
+const nextCanvas = document.getElementById('next');
+const nextCtx = nextCanvas.getContext('2d');
+nextCtx.scale(30, 30);
+
+const colors = [null, '#4cc9f0', '#f72585', '#b5179e', '#7209b7', '#4895ef', '#4ade80', '#f59e0b'];
+const pieces = 'TJLOSZI';
+const arena = createMatrix(10, 20);
+const player = { pos:{x:0,y:0}, matrix:null, nextMatrix:null, score:0, lines:0 };
+let running=false, paused=false, gameOver=false, dropCounter=0, dropInterval=650, lastTime=0;
+
+const scoreEl = document.getElementById('score');
+const linesEl = document.getElementById('lines');
+const statusEl = document.getElementById('status');
+
+const widgets = [
+  SC.Widget(document.getElementById('scPlayer1')),
+  SC.Widget(document.getElementById('scPlayer2')),
+  SC.Widget(document.getElementById('scPlayer3')),
+];
+let activeTrack = 0;
+
+function createMatrix(w,h){const m=[]; while(h--)m.push(new Array(w).fill(0)); return m;}
+function createPiece(type){
+  if(type==='T')return [[0,1,0],[1,1,1],[0,0,0]];
+  if(type==='O')return [[2,2],[2,2]];
+  if(type==='L')return [[0,3,0],[0,3,0],[0,3,3]];
+  if(type==='J')return [[0,4,0],[0,4,0],[4,4,0]];
+  if(type==='I')return [[0,5,0,0],[0,5,0,0],[0,5,0,0],[0,5,0,0]];
+  if(type==='S')return [[0,6,6],[6,6,0],[0,0,0]];
+  return [[7,7,0],[0,7,7],[0,0,0]];
+}
+const randomPiece=()=>createPiece(pieces[(Math.random()*pieces.length)|0]);
+function collide(ar,p){for(let y=0;y<p.matrix.length;y++)for(let x=0;x<p.matrix[y].length;x++)if(p.matrix[y][x]!==0&&(ar[y+p.pos.y]&&ar[y+p.pos.y][x+p.pos.x])!==0)return true; return false;}
+function merge(ar,p){p.matrix.forEach((r,y)=>r.forEach((v,x)=>{if(v)ar[y+p.pos.y][x+p.pos.x]=v;}));}
+function rotate(m){for(let y=0;y<m.length;y++)for(let x=0;x<y;x++)[m[x][y],m[y][x]]=[m[y][x],m[x][y]]; m.forEach(r=>r.reverse());}
+function playerRotate(){const pos=player.pos.x; let o=1; rotate(player.matrix); while(collide(arena,player)){player.pos.x+=o; o=-(o+(o>0?1:-1)); if(o>player.matrix[0].length){rotate(player.matrix);rotate(player.matrix);rotate(player.matrix); player.pos.x=pos; return;}}}
+function ghostPosition(){
+  const ghost={pos:{x:player.pos.x,y:player.pos.y},matrix:player.matrix};
+  while(!collide(arena,ghost)) ghost.pos.y++;
+  ghost.pos.y--;
+  return ghost.pos;
+}
+
+function resetPlayer(){
+  if(!player.nextMatrix) player.nextMatrix = randomPiece();
+  player.matrix = player.nextMatrix;
+  player.nextMatrix = randomPiece();
+  player.pos.y=0;
+  player.pos.x=((arena[0].length/2)|0)-((player.matrix[0].length/2)|0);
+  drawNext();
+}
+function drawNext(){
+  nextCtx.fillStyle = '#0b1324'; nextCtx.fillRect(0,0,nextCanvas.width,nextCanvas.height);
+  drawMatrix(nextCtx, player.nextMatrix, {x:1,y:1});
+}
+function playerDrop(){player.pos.y++; if(collide(arena,player)){player.pos.y--; merge(arena,player); sweep(); resetPlayer(); if(collide(arena,player)){gameOver=true; running=false; statusEl.textContent='Game Over'; pauseMusic();}} dropCounter=0;}
+function playerMove(d){player.pos.x+=d; if(collide(arena,player))player.pos.x-=d;}
+function sweep(){let rc=1; outer: for(let y=arena.length-1;y>=0;y--){for(let x=0;x<arena[y].length;x++)if(arena[y][x]===0)continue outer; const row=arena.splice(y,1)[0].fill(0); arena.unshift(row); y++; player.score+=rc*10; player.lines++; rc*=2;} updateHUD();}
+function drawMatrix(target,m,o,alpha=1){const prev=target.globalAlpha; target.globalAlpha=alpha; m.forEach((r,y)=>r.forEach((v,x)=>{if(v){target.fillStyle=colors[v]; target.fillRect(x+o.x,y+o.y,1,1);}})); target.globalAlpha=prev;}
+function draw(){ctx.fillStyle='#0b1324'; ctx.fillRect(0,0,canvas.width,canvas.height); drawMatrix(ctx,arena,{x:0,y:0}); const g=ghostPosition(); drawMatrix(ctx,player.matrix,{x:g.x,y:g.y},0.22); drawMatrix(ctx,player.matrix,{x:player.pos.x,y:player.pos.y});}
+function update(t=0){if(!running||paused||gameOver)return; const d=t-lastTime; lastTime=t; dropCounter+=d; if(dropCounter>dropInterval)playerDrop(); draw(); requestAnimationFrame(update);}
+function updateHUD(){scoreEl.textContent=player.score; linesEl.textContent=player.lines;}
+
+function playMusic(){widgets.forEach((w,i)=> i===activeTrack ? w.play() : (w.pause(), w.seekTo(0)));}
+function pauseMusic(){widgets[activeTrack].pause();}
+function stopAllMusic(){widgets.forEach(w=>{w.pause(); w.seekTo(0);});}
+
+function startGame(){if(gameOver){arena.forEach(r=>r.fill(0)); player.score=0; player.lines=0; updateHUD(); gameOver=false;} if(!player.matrix)resetPlayer(); paused=false; running=true; statusEl.textContent='En cours'; playMusic(); lastTime=performance.now(); requestAnimationFrame(update); draw();}
+function pauseGame(){if(!running||gameOver)return; paused=!paused; statusEl.textContent=paused?'En pause':'En cours'; if(paused)pauseMusic(); else {playMusic(); lastTime=performance.now(); requestAnimationFrame(update);} }
+function stopGame(){running=false; paused=false; gameOver=false; arena.forEach(r=>r.fill(0)); player.score=0; player.lines=0; updateHUD(); resetPlayer(); draw(); statusEl.textContent='Arrêté'; stopAllMusic();}
+
+for (const radio of document.querySelectorAll('input[name="track"]')) {
+  radio.addEventListener('change', e => {
+    activeTrack = Number(e.target.value);
+    document.getElementById('track1Wrap').classList.toggle('active-track', activeTrack===0);
+    document.getElementById('track2Wrap').classList.toggle('active-track', activeTrack===1);
+    document.getElementById('track3Wrap').classList.toggle('active-track', activeTrack===2);
+    if (running && !paused && !gameOver) playMusic();
+  });
+}
+
+document.getElementById('startBtn').addEventListener('click',startGame);
+document.getElementById('pauseBtn').addEventListener('click',pauseGame);
+document.getElementById('stopBtn').addEventListener('click',stopGame);
+document.addEventListener('keydown',e=>{if(!running||paused||gameOver)return; if(e.key==='ArrowLeft')playerMove(-1); else if(e.key==='ArrowRight')playerMove(1); else if(e.key==='ArrowDown')playerDrop(); else if(e.key==='ArrowUp')playerRotate(); draw();});
+
+resetPlayer(); draw();
+</script>
+</body>
+</html>
